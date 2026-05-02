@@ -28,7 +28,7 @@ export default async function handler(req, res) {
 
     try {
         // 1. Simpan Kode ke Database Vercel KV menggunakan sintaks Standar Upstash
-        await fetch(`${KV_URL}`, {
+        const kvRes = await fetch(`${KV_URL}`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${KV_TOKEN}`,
@@ -36,6 +36,12 @@ export default async function handler(req, res) {
             },
             body: JSON.stringify(["SET", newCode, JSON.stringify({ phone: phone, status: 'pending' })])
         });
+
+        const kvData = await kvRes.json();
+        if (kvData.error) {
+            console.error('KV Error:', kvData.error);
+            return res.status(500).json({ error: 'Gagal menyimpan ke database Upstash: ' + kvData.error });
+        }
 
         // 2. Siapkan pesan untuk dikirim ke WhatsApp Admin
         const message = `*🔔 PERMINTAAN LISENSI BARU!*\n\n*Nomor Pemohon:* ${phone}\n*Kode Akses:* ${newCode}\n*Status:* PENDING (Vercel KV)\n\n_Pesan Otomatis: Segera hubungi pemohon di nomor tersebut untuk proses pembayaran. Jika sudah lunas, berikan kode tersebut kepada mereka._`;

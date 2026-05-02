@@ -34,6 +34,11 @@ export default async function handler(req, res) {
         });
         
         const data = await response.json();
+
+        // Jika Upstash mengembalikan pesan error (misalnya Unauthorized)
+        if (data.error) {
+            return res.status(500).json({ error: 'Upstash Error: ' + data.error });
+        }
         
         // data.result akan bernilai null jika kunci tidak ditemukan
         if (data.result) {
