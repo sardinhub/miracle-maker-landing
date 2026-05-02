@@ -27,14 +27,14 @@ export default async function handler(req, res) {
     }
 
     try {
-        // 1. Simpan Kode ke Database Vercel KV (Set key: NQMT-XXXX, value: status pending)
-        await fetch(`${KV_URL}/set/${newCode}`, {
+        // 1. Simpan Kode ke Database Vercel KV menggunakan sintaks Standar Upstash
+        await fetch(`${KV_URL}`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${KV_TOKEN}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ phone: phone, status: 'pending' })
+            body: JSON.stringify(["SET", newCode, JSON.stringify({ phone: phone, status: 'pending' })])
         });
 
         // 2. Siapkan pesan untuk dikirim ke WhatsApp Admin

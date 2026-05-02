@@ -23,12 +23,14 @@ export default async function handler(req, res) {
     }
 
     try {
-        // Cek apakah kode ada di Vercel KV
-        const response = await fetch(`${KV_URL}/get/${upperCode}`, {
-            method: 'GET',
+        // Cek apakah kode ada di Vercel KV menggunakan sintaks Standar Upstash
+        const response = await fetch(`${KV_URL}`, {
+            method: 'POST',
             headers: {
-                'Authorization': `Bearer ${KV_TOKEN}`
-            }
+                'Authorization': `Bearer ${KV_TOKEN}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(["GET", upperCode])
         });
         
         const data = await response.json();
