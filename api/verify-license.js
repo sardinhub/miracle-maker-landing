@@ -10,17 +10,42 @@ export default async function handler(req, res) {
 
     const upperCode = code.trim().toUpperCase();
 
-    // Validasi Pola Sementara (Karena Cloud Database belum dipasang)
-    // Jika kodenya MIRACLE21 atau sesuai format NQMT-XXXX, maka lolos.
-    const isValid = /^NQMT-[A-Z0-9]{4,}$/.test(upperCode) || upperCode === 'MIRACLE21';
+    // Master Key (Tidak perlu database)
+    if (upperCode === 'MIRACLE21') {
+        return res.status(200).json({ success: true, message: 'Master Key Valid!', data: {} });
+    }
 
-    if (isValid) {
-        return res.status(200).json({ 
-            success: true, 
-            message: 'Lisensi Valid!',
-            data: {} // Data kosong sampai Supabase/Firebase dipasang
+    const KV_URL = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+    const KV_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+
+    if (!KV_URL || !KV_TOKEN) {
+        return res.status(500).json({ error: 'Database belum siap.' });
+    }
+
+    try {
+        // Cek apakah kode ada di Vercel KV
+        const response = await fetch(`${KV_URL}/get/${upperCode}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${KV_TOKEN}`
+            }
         });
-    } else {
-        return res.status(404).json({ error: 'Kode lisensi salah atau tidak valid.' });
+        
+        const data = await response.json();
+        
+        // data.result akan bernilai null jika kunci tidak ditemukan
+        if (data.result) {
+            // Opsional: Jika status masih pending, kita bisa ubah ke active
+            return res.status(200).json({ 
+                success: true, 
+                message: 'Lisensi Valid!',
+                data: typeof data.result === 'string' ? JSON.parse(data.result) : data.result
+            });
+        } else {
+            return res.status(404).json({ error: 'Kode lisensi salah atau belum terdaftar di sistem.' });
+        }
+    } catch (error) {
+        console.error('KV Fetch Error:', error);
+        return res.status(500).json({ error: 'Terjadi kesalahan pada server database.' });
     }
 }
