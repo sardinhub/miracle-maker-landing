@@ -1,3 +1,5 @@
+import axios from 'axios';
+
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method Not Allowed' });
@@ -12,11 +14,16 @@ export default async function handler(req, res) {
     const ADMIN_PHONE = '6281354581418';
 
     // Mendukung Vercel KV versi lama atau Upstash Redis versi baru
-    const KV_URL = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+    let KV_URL = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
     const KV_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
 
     if (!KV_URL || !KV_TOKEN) {
         return res.status(500).json({ error: 'Sistem Database (Vercel KV) belum diaktifkan di Dashboard Vercel Anda.' });
+    }
+    
+    // Pastikan URL valid
+    if (!KV_URL.startsWith('http')) {
+        KV_URL = 'https://' + KV_URL;
     }
 
     // Generate kode unik acak
@@ -28,21 +35,21 @@ export default async function handler(req, res) {
 
     try {
         // 1. Simpan Kode ke Database Vercel KV menggunakan sintaks Standar Upstash
-        const kvRes = await fetch(`${KV_URL}`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${KV_TOKEN}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(["SET", newCode, JSON.stringify({ phone: phone, status: 'pending' })])
-        });
-
         let kvData;
         try {
-            kvData = await kvRes.json();
+            const kvRes = await axios.post(`${KV_URL}`, 
+                ["SET", newCode, JSON.stringify({ phone: phone, status: 'pending' })],
+                {
+                    headers: {
+                        'Authorization': `Bearer ${KV_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+            kvData = kvRes.data;
         } catch (e) {
-            console.error('KV JSON Parse Error:', e);
-            return res.status(500).json({ error: 'Gagal mengurai respons dari Upstash database.' });
+            console.error('KV Request Error:', e.message);
+            return res.status(500).json({ error: 'Koneksi ke database gagal: ' + e.message });
         }
         
         if (kvData.error) {
@@ -54,35 +61,36 @@ export default async function handler(req, res) {
         const message = `*🔔 PERMINTAAN LISENSI BARU!*\n\n*Nomor Pemohon:* ${phone}\n*Kode Akses:* ${newCode}\n*Status:* PENDING (Vercel KV)\n\n_Pesan Otomatis: Segera hubungi pemohon di nomor tersebut untuk proses pembayaran. Jika sudah lunas, berikan kode tersebut kepada mereka._`;
 
         // 3. Kirim ke Fonnte
-        const response = await fetch('https://api.fonnte.com/send', {
-            method: 'POST',
-            headers: {
-                'Authorization': FONNTE_TOKEN,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                target: ADMIN_PHONE,
-                message: message
-            })
-        });
-
         let data;
         try {
-            data = await response.json();
+            const response = await axios.post('https://api.fonnte.com/send', {
+                target: ADMIN_PHONE,
+                message: message
+            }, {
+                headers: {
+                    'Authorization': FONNTE_TOKEN,
+                    'Content-Type': 'application/json'
+                }
+            });
+            data = response.data;
         } catch (e) {
-            console.error('Fonnte JSON Parse Error:', e);
+            console.error('Fonnte Request Error:', e.message);
             // Tetap kembalikan pesan sukses atau error Fonnte
-            // karena kadang Fonnte membalas text/html saat gangguan
-            return res.status(500).json({ error: 'Fonnte mengembalikan format yang tidak valid. Sistem gagal memproses pengiriman.' });
+            // karena kadang Fonnte membalas error status tapi pesan terkirim
+            if (e.response && e.response.data) {
+                data = e.response.data;
+            } else {
+                return res.status(500).json({ error: 'Gagal menghubungi server Fonnte: ' + e.message });
+            }
         }
 
-        if (data.status) {
+        if (data && data.status) {
             return res.status(200).json({ success: true, message: 'Permohonan berhasil dikirim ke WA Admin.' });
         } else {
-            return res.status(500).json({ error: 'Fonnte menolak permintaan pengiriman pesan: ' + (data.reason || 'Alasan tidak diketahui.') });
+            return res.status(500).json({ error: 'Fonnte menolak permintaan pengiriman pesan: ' + (data ? data.reason : 'Alasan tidak diketahui.') });
         }
     } catch (error) {
-        console.error('Fetch Error:', error);
-        return res.status(500).json({ error: 'Terjadi kesalahan pada server: ' + (error.message || error) });
+        console.error('System Error:', error);
+        return res.status(500).json({ error: 'Terjadi kesalahan pada sistem: ' + (error.message || error) });
     }
 }
